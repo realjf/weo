@@ -2,12 +2,18 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/docker/go-units"
 	"github.com/flynn/go-docopt"
-	"os"
+	"io"
 	"log"
+	"os"
 	"strings"
+	"text/tabwriter"
+	"time"
 	"unicode"
+	cfg "weo/cli/config"
 	controller "weo/controller/client"
 	"weo/pkg/shutdown"
 	"weo/pkg/version"
@@ -15,7 +21,7 @@ import (
 
 var (
 	flagCluster = os.Getenv("WEO_CLUSTER")
-	flagApp string
+	flagApp     string
 )
 
 func main() {
@@ -73,7 +79,7 @@ See 'weo help <command>' for more information on a specific command.
 		if len(cmdArgs) == 0 {
 			fmt.Println(usage)
 			return
-		}else if cmdArgs[0] == "--json" {
+		} else if cmdArgs[0] == "--json" {
 			cmds := make(map[string]string)
 			for name, cmd := range commands {
 				cmds[name] = cmd.usage
@@ -84,7 +90,7 @@ See 'weo help <command>' for more information on a specific command.
 			}
 			fmt.Println(string(out))
 			return
-		}else {
+		} else {
 			cmd = cmdArgs[0]
 			cmdArgs = make([]string, 1)
 			cmdArgs[0] = "--help"
@@ -124,8 +130,8 @@ See 'weo help <command>' for more information on a specific command.
 }
 
 type command struct {
-	usage string
-	f interface{}
+	usage     string
+	f         interface{}
 	optsFirst bool
 }
 
@@ -180,5 +186,123 @@ var config *cfg.Config
 var clusterConf *cfg.Cluster
 
 func configPath() string {
-	return cfg.DefaultPath
+	return cfg.DefaultPath()
+}
+
+func readConfig() (err error) {
+	if config != nil {
+		return nil
+	}
+	config, err = cfg.ReadFile(configPath())
+	if os.IsNotExist(err) {
+		err = nil
+	}
+	if config.Upgrade() {
+		if err := config.SaveTo(configPath()); err != nil {
+			return fmt.Errorf("Error saving upgraded config: %s", err)
+		}
+	}
+	return
+}
+
+func getClusterClient() (controller.Client, error) {
+	cluster, err := getCluster()
+	if err != nil {
+		return nil, err
+	}
+	return cluster.Client()
+}
+
+var ErrNoClusters = errors.New("no clusters configured")
+
+func getCluster() (*cfg.Cluster, error) {
+	app()
+	if clusterConf != nil {
+		return clusterConf, nil
+	}
+	if err := readConfig(); err != nil {
+		return nil, err
+	}
+	if len(config.Clusters) == 0 {
+		return nil, ErrNoClusters
+	}
+	name := flagCluster
+	if name == "" {
+		name = config.Default
+	}
+	if name == "" {
+		clusterConf = config.Clusters[0]
+		return clusterConf, nil
+	}
+	for _, s := range config.Clusters {
+		if s.Name == name {
+			clusterConf = s
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown cluster %q", name)
+}
+
+func app() (string, error) {
+	if flagApp != "" {
+		return flagApp, nil
+	}
+	if app := os.Getenv("WEO_APP"); app != "" {
+		flagApp = app
+		return app, nil
+	}
+	if err := readConfig(); err != nil {
+		return "", err
+	}
+
+	ra, err := appFromGitRemote(remoteFromGitConfig())
+	if err != nil {
+		return "", err
+	}
+	if ra == nil {
+		return "", errors.New("no app found, run from a repo with a weo remote or specify one with -a")
+	}
+	clusterConf = ra.Cluster
+	flagApp = ra.Name
+	return ra.Name, nil
+}
+
+func mustApp() string {
+	name, err := app()
+	if err != nil {
+		log.Println(err)
+		shutdown.ExitWithCode(1)
+	}
+	return name
+}
+
+func tabWriter() *tabwriter.Writer {
+	return tabwriter.NewWriter(os.Stdout, 1, 2, 2, ' ', 0)
+}
+
+func humanTime(ts *time.Time) string {
+	if ts == nil || ts.IsZero() {
+		return ""
+	}
+	return units.HumanDuration(time.Now().UTC().Sub(*ts)) + " ago"
+}
+
+func listRec(w io.Writer, a ...interface{}) {
+	for i, x := range a {
+		fmt.Fprint(w, x)
+		if i+1 < len(a) {
+			w.Write([]byte{'\t'})
+		} else {
+			w.Write([]byte{'\n'})
+		}
+	}
+}
+
+func compatCheck(client controller.Client, minVersion string) (bool, error) {
+	status, err := client.Status()
+	if err != nil {
+		return false, err
+	}
+	v := version.Parse(status.Version)
+	return v.Dev || !v.Before(version.Parse(minVersion)), nil
 }

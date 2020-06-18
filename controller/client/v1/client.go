@@ -1,6 +1,9 @@
 package v1controller
 
-import "weo/pkg/httpclient"
+import (
+	"weo/pkg/httpclient"
+	"weo/pkg/stream"
+)
 
 type Client struct {
 	*httpclient.Client

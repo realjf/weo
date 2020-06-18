@@ -19,8 +19,8 @@ import (
 	"time"
 	"weo/pkg/version"
 
-	cfg "weo/cli/config"
 	tuf "github.com/flynn/go-tuf/client"
+	cfg "weo/cli/config"
 )
 
 const upcktimePath = "cktime"
@@ -36,9 +36,7 @@ func runUpdate() error {
 }
 
 type Updater struct {
-
 }
-
 
 func (u *Updater) backgroundRun() {
 	if u == nil {
@@ -67,7 +65,7 @@ func (u *Updater) wantUpdate() bool {
 	if version.Dev() || readTime(path).After(time.Now()) {
 		return false
 	}
-	wait := 12 * time.Hour + randDuration(8 * time.Hour)
+	wait := 12*time.Hour + randDuration(8*time.Hour)
 	return writeTime(path, time.Now().Add(wait))
 }
 
@@ -87,7 +85,7 @@ func (u *Updater) update() error {
 	plat := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
 	opts := &tuf.HTTPRemoteOptions{
 		UserAgent: fmt.Sprintf("weo-cli/%s %s", version.String(), plat),
-		Retries: tufutil.DefaultHTTPRetries,
+		Retries:   tufutil.DefaultHTTPRetries,
 	}
 	remote, err := tuf.HTTPRemoteStore(tufconfig.Repository, opts)
 	if err != nil {

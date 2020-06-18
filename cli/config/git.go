@@ -11,7 +11,7 @@ import (
 )
 
 func CACertPath(name string) string {
-	return filepath.Join(Dir(), "ca-certs", name+ ".pem")
+	return filepath.Join(Dir(), "ca-certs", name+".pem")
 }
 
 func CACertFile(name string) (*os.File, error) {
@@ -51,7 +51,7 @@ func WriteGlobalGitConfig(gitURL, caFile string) error {
 }
 
 func RemoveGlobalGitConfig(gitURL string) {
-	for _, k := range []string {
+	for _, k := range []string{
 		fmt.Sprintf("http.%s", gitURL),
 		fmt.Sprintf("credential.%s", gitURL),
 	} {
